@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
+import Link from 'next/link'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -13,41 +14,107 @@ type Match = {
   status: string
 }
 
-export default function Dashboard() {
-  const { user, loading } = useAuth()
+type Prediction = {
+  id: string
+  predicted_winner: string
+  is_correct: boolean | null
+  points_earned: number
+}
+
+export default function MatchPage() {
+  const { user, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [matches, setMatches] = useState<Match[]>([])
-  const [loadingMatches, setLoadingMatches] = useState(true)
+  const params = useParams()
+  const matchId = params?.id as string
+
+  const [match, setMatch] = useState<Match | null>(null)
+  const [prediction, setPrediction] = useState<Prediction | null>(null)
+  const [selectedWinner, setSelectedWinner] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (authLoading) return
+    if (!user) {
       router.replace('/auth')
     }
-  }, [user, loading, router])
+  }, [user, authLoading, router])
 
   useEffect(() => {
-    if (user) {
-      fetchMatches()
+    if (matchId && !authLoading) {
+      fetchMatch()
+      if (user) fetchPrediction()
     }
-  }, [user])
+  }, [matchId, user, authLoading])
 
-  const fetchMatches = async () => {
+  const fetchMatch = async () => {
     try {
       const { data, error } = await supabase
         .from('matches')
         .select('*')
-        .order('scheduled_at', { ascending: true })
+        .eq('id', matchId)
+        .single()
 
       if (error) throw error
-      setMatches(data || [])
+      setMatch(data)
     } catch (err) {
-      console.error('Error fetching matches:', err)
+      console.error('Error fetching match:', err)
     } finally {
-      setLoadingMatches(false)
+      setLoading(false)
     }
   }
 
-  if (loading) {
+  const fetchPrediction = async () => {
+    if (!user) return
+    try {
+      const { data } = await supabase
+        .from('predictions')
+        .select('*')
+        .eq('match_id', matchId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (data) setPrediction(data)
+    } catch (err) {
+      console.error('Error fetching prediction:', err)
+    }
+  }
+
+  const handlePrediction = async (winner: string) => {
+    if (!user) return
+
+    setSubmitting(true)
+    try {
+      if (prediction) {
+        const { error } = await supabase
+          .from('predictions')
+          .update({ predicted_winner: winner })
+          .eq('id', prediction.id)
+
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('predictions')
+          .insert({
+            user_id: user.id,
+            match_id: matchId,
+            predicted_winner: winner,
+          })
+
+        if (error) throw error
+      }
+
+      setSelectedWinner(winner)
+      await fetchPrediction()
+    } catch (err) {
+      console.error('Error making prediction:', err)
+      alert('Failed to save prediction')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
         <p>Loading...</p>
@@ -59,58 +126,77 @@ export default function Dashboard() {
     return null
   }
 
+  if (!match) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
+        <p>Match not found</p>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold">SecondScreen</h1>
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push('/leaderboard')}
-              className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded"
-            >
-              Leaderboard
-            </button>
-            <button
-              onClick={() => router.push('/profile')}
-              className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded"
-            >
-              Profile
-            </button>
+      <div className="max-w-2xl mx-auto">
+        <Link
+          href="/dashboard"
+          className="mb-6 text-purple-400 hover:text-purple-300 inline-block"
+        >
+          ← Back
+        </Link>
+
+        <div className="bg-slate-800 border border-purple-500/20 rounded-lg p-8">
+          <h1 className="text-3xl font-bold mb-2">
+            {match.team1} vs {match.team2}
+          </h1>
+          <p className="text-slate-400 mb-6">
+            {new Date(match.scheduled_at).toLocaleString()}
+          </p>
+
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold mb-4">Make Your Prediction</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => handlePrediction(match.team1)}
+                disabled={submitting}
+                className={`py-4 px-6 rounded-lg font-semibold transition ${
+                  selectedWinner === match.team1 || prediction?.predicted_winner === match.team1
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-700 hover:bg-slate-600'
+                } disabled:opacity-50`}
+              >
+                {match.team1}
+              </button>
+              <button
+                onClick={() => handlePrediction(match.team2)}
+                disabled={submitting}
+                className={`py-4 px-6 rounded-lg font-semibold transition ${
+                  selectedWinner === match.team2 || prediction?.predicted_winner === match.team2
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-700 hover:bg-slate-600'
+                } disabled:opacity-50`}
+              >
+                {match.team2}
+              </button>
+            </div>
+
+            {prediction && (
+              <div className="mt-4 p-3 bg-purple-600/20 border border-purple-500/50 rounded text-purple-200 text-sm">
+                You predicted: <strong>{prediction.predicted_winner}</strong>
+                {prediction.is_correct !== null && (
+                  <span className={prediction.is_correct ? ' text-green-400' : ' text-red-400'}>
+                    {' '}
+                    ({prediction.is_correct ? 'Correct' : 'Incorrect'}) +
+                    {prediction.points_earned} pts
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="text-slate-400 text-sm">
+            Status: <span className="capitalize font-semibold">{match.status}</span>
           </div>
         </div>
-
-        <h2 className="text-2xl font-bold mb-6">Upcoming Matches</h2>
-
-        {loadingMatches ? (
-          <p className="text-slate-400">Loading matches...</p>
-        ) : matches.length === 0 ? (
-          <p className="text-slate-400">No matches scheduled yet.</p>
-        ) : (
-          <div className="grid gap-4">
-            {matches.map((match) => (
-              <div
-                key={match.id}
-                className="bg-slate-800 border border-purple-500/20 rounded-lg p-6 hover:border-purple-500/50 transition cursor-pointer"
-                onClick={() => router.push(`/match/${match.id}`)}
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-lg font-semibold">
-                      {match.team1} vs {match.team2}
-                    </p>
-                    <p className="text-slate-400 text-sm">
-                      {new Date(match.scheduled_at).toLocaleString()}
-                    </p>
-                  </div>
-                  <span className="bg-purple-600/20 text-purple-300 px-3 py-1 rounded text-sm capitalize">
-                    {match.status}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )
