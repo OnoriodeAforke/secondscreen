@@ -19,26 +19,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Check current session
-    const checkAuth = async () => {
+    // Check session once on mount
+    const checkSession = async () => {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
+        const { data: { session } } = await supabase.auth.getSession()
         setUser(session?.user ?? null)
-      } catch (error) {
-        console.error('Auth check error:', error)
+      } catch (err) {
+        console.error('Session check failed:', err)
       } finally {
         setLoading(false)
       }
     }
 
-    checkAuth()
+    checkSession()
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
     })
 
@@ -50,9 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        data: {
-          username,
-        },
+        data: { username },
       },
     })
     if (error) throw error

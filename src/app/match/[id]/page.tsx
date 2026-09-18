@@ -18,16 +18,12 @@ export default function Dashboard() {
   const router = useRouter()
   const [matches, setMatches] = useState<Match[]>([])
   const [loadingMatches, setLoadingMatches] = useState(true)
-  const [redirecting, setRedirecting] = useState(false)
 
   useEffect(() => {
-    if (loading) return
-
-    if (!user && !redirecting) {
-      setRedirecting(true)
-      router.push('/auth')
+    if (!loading && !user) {
+      router.replace('/auth')
     }
-  }, [user, loading, router, redirecting])
+  }, [user, loading, router])
 
   useEffect(() => {
     if (user) {
@@ -51,7 +47,7 @@ export default function Dashboard() {
     }
   }
 
-  if (loading || redirecting) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
         <p>Loading...</p>
