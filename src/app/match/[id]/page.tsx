@@ -12,6 +12,7 @@ type Match = {
   team2: string
   scheduled_at: string
   status: string
+  result: string | null
 }
 
 type Prediction = {
@@ -81,7 +82,7 @@ export default function MatchPage() {
   }
 
   const handlePrediction = async (winner: string) => {
-    if (!user) return
+    if (!user || !match || match.status !== 'upcoming') return
 
     setSubmitting(true)
     try {
@@ -134,6 +135,8 @@ export default function MatchPage() {
     )
   }
 
+  const predictionsDisabled = match.status !== 'upcoming'
+
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4">
       <div className="max-w-2xl mx-auto">
@@ -145,47 +148,70 @@ export default function MatchPage() {
         </Link>
 
         <div className="bg-slate-800 border border-purple-500/20 rounded-lg p-8">
-          <h1 className="text-3xl font-bold mb-2">
-            {match.team1} vs {match.team2}
-          </h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-bold">
+              {match.team1} vs {match.team2}
+            </h1>
+            {match.status === 'live' && (
+              <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded animate-pulse">
+                ● LIVE
+              </span>
+            )}
+          </div>
           <p className="text-slate-400 mb-6">
             {new Date(match.scheduled_at).toLocaleString()}
           </p>
 
           <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">Make Your Prediction</h2>
+            <h2 className="text-xl font-semibold mb-4">
+              {match.status === 'completed' ? 'Final Result' : 'Make Your Prediction'}
+            </h2>
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => handlePrediction(match.team1)}
-                disabled={submitting}
+                disabled={submitting || predictionsDisabled}
                 className={`py-4 px-6 rounded-lg font-semibold transition ${
                   selectedWinner === match.team1 || prediction?.predicted_winner === match.team1
                     ? 'bg-purple-600 text-white'
                     : 'bg-slate-700 hover:bg-slate-600'
-                } disabled:opacity-50`}
+                } ${
+                  match.status === 'completed' && match.result === match.team1
+                    ? 'ring-2 ring-green-400'
+                    : ''
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {match.team1}
               </button>
               <button
                 onClick={() => handlePrediction(match.team2)}
-                disabled={submitting}
+                disabled={submitting || predictionsDisabled}
                 className={`py-4 px-6 rounded-lg font-semibold transition ${
                   selectedWinner === match.team2 || prediction?.predicted_winner === match.team2
                     ? 'bg-purple-600 text-white'
                     : 'bg-slate-700 hover:bg-slate-600'
-                } disabled:opacity-50`}
+                } ${
+                  match.status === 'completed' && match.result === match.team2
+                    ? 'ring-2 ring-green-400'
+                    : ''
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {match.team2}
               </button>
             </div>
 
+            {match.status === 'live' && (
+              <p className="text-red-400 text-sm mt-3">
+                Predictions are locked — this match is live.
+              </p>
+            )}
+
             {prediction && (
               <div className="mt-4 p-3 bg-purple-600/20 border border-purple-500/50 rounded text-purple-200 text-sm">
                 You predicted: <strong>{prediction.predicted_winner}</strong>
-                {prediction.is_correct !== null && (
+                {match.status === 'completed' && prediction.is_correct !== null && (
                   <span className={prediction.is_correct ? ' text-green-400' : ' text-red-400'}>
                     {' '}
-                    ({prediction.is_correct ? 'Correct' : 'Incorrect'}) +
+                    ({prediction.is_correct ? 'Correct! 🎉' : 'Incorrect'}) +
                     {prediction.points_earned} pts
                   </span>
                 )}
