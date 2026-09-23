@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import Link from 'next/link'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { PollDisplay } from '@/components/PollDisplay'
 
 type Match = {
   id: string
@@ -23,10 +23,10 @@ type Prediction = {
 }
 
 export default function MatchPage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user } = useAuth()
   const router = useRouter()
   const params = useParams()
-  const matchId = params?.id as string
+  const matchId = params.id as string
 
   const [match, setMatch] = useState<Match | null>(null)
   const [prediction, setPrediction] = useState<Prediction | null>(null)
@@ -35,18 +35,11 @@ export default function MatchPage() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (authLoading) return
-    if (!user) {
-      router.replace('/auth')
-    }
-  }, [user, authLoading, router])
-
-  useEffect(() => {
-    if (matchId && !authLoading) {
+    if (matchId) {
       fetchMatch()
       if (user) fetchPrediction()
     }
-  }, [matchId, user, authLoading])
+  }, [matchId, user])
 
   const fetchMatch = async () => {
     try {
@@ -66,23 +59,35 @@ export default function MatchPage() {
   }
 
   const fetchPrediction = async () => {
-    if (!user) return
     try {
       const { data } = await supabase
         .from('predictions')
         .select('*')
         .eq('match_id', matchId)
-        .eq('user_id', user.id)
-        .maybeSingle()
+        .eq('user_id', user!.id)
+        .single()
 
       if (data) setPrediction(data)
     } catch (err) {
-      console.error('Error fetching prediction:', err)
+      // No prediction yet, that's fine
     }
   }
 
   const handlePrediction = async (winner: string) => {
-    if (!user || !match || match.status !== 'upcoming') return
+    if (!user) {
+      router.push('/auth')
+      return
+    }
+
+    if (match?.status === 'completed') {
+      alert('This match has already ended. Predictions are locked.')
+      return
+    }
+
+    if (match?.status === 'live') {
+      alert('This match is live. Predictions are locked.')
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -106,7 +111,7 @@ export default function MatchPage() {
       }
 
       setSelectedWinner(winner)
-      await fetchPrediction()
+      fetchPrediction()
     } catch (err) {
       console.error('Error making prediction:', err)
       alert('Failed to save prediction')
@@ -115,16 +120,14 @@ export default function MatchPage() {
     }
   }
 
-  if (authLoading || loading) {
+  const isLocked = match?.status === 'live' || match?.status === 'completed'
+
+  if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
         <p>Loading...</p>
       </div>
     )
-  }
-
-  if (!user) {
-    return null
   }
 
   if (!match) {
@@ -135,17 +138,15 @@ export default function MatchPage() {
     )
   }
 
-  const predictionsDisabled = match.status !== 'upcoming'
-
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4">
       <div className="max-w-2xl mx-auto">
-        <Link
-          href="/dashboard"
-          className="mb-6 text-purple-400 hover:text-purple-300 inline-block"
+        <button
+          onClick={() => router.back()}
+          className="mb-6 text-purple-400 hover:text-purple-300"
         >
           ← Back
-        </Link>
+        </button>
 
         <div className="bg-slate-800 border border-purple-500/20 rounded-lg p-8">
           <div className="flex items-center gap-3 mb-2">
@@ -154,7 +155,12 @@ export default function MatchPage() {
             </h1>
             {match.status === 'live' && (
               <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded animate-pulse">
-                ● LIVE
+                🔴 LIVE
+              </span>
+            )}
+            {match.status === 'completed' && (
+              <span className="bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">
+                COMPLETED
               </span>
             )}
           </div>
@@ -163,55 +169,47 @@ export default function MatchPage() {
           </p>
 
           <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">
-              {match.status === 'completed' ? 'Final Result' : 'Make Your Prediction'}
-            </h2>
+            <h2 className="text-xl font-semibold mb-4">Make Your Prediction</h2>
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => handlePrediction(match.team1)}
-                disabled={submitting || predictionsDisabled}
+                disabled={submitting || isLocked}
                 className={`py-4 px-6 rounded-lg font-semibold transition ${
                   selectedWinner === match.team1 || prediction?.predicted_winner === match.team1
                     ? 'bg-purple-600 text-white'
                     : 'bg-slate-700 hover:bg-slate-600'
-                } ${
-                  match.status === 'completed' && match.result === match.team1
-                    ? 'ring-2 ring-green-400'
-                    : ''
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {match.team1}
               </button>
               <button
                 onClick={() => handlePrediction(match.team2)}
-                disabled={submitting || predictionsDisabled}
+                disabled={submitting || isLocked}
                 className={`py-4 px-6 rounded-lg font-semibold transition ${
                   selectedWinner === match.team2 || prediction?.predicted_winner === match.team2
                     ? 'bg-purple-600 text-white'
                     : 'bg-slate-700 hover:bg-slate-600'
-                } ${
-                  match.status === 'completed' && match.result === match.team2
-                    ? 'ring-2 ring-green-400'
-                    : ''
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {match.team2}
               </button>
             </div>
 
-            {match.status === 'live' && (
-              <p className="text-red-400 text-sm mt-3">
-                Predictions are locked — this match is live.
+            {isLocked && !prediction && (
+              <p className="mt-4 text-slate-400 text-sm">
+                {match.status === 'live'
+                  ? 'This match is live. Predictions are locked.'
+                  : 'This match has ended. Predictions are locked.'}
               </p>
             )}
 
             {prediction && (
               <div className="mt-4 p-3 bg-purple-600/20 border border-purple-500/50 rounded text-purple-200 text-sm">
                 You predicted: <strong>{prediction.predicted_winner}</strong>
-                {match.status === 'completed' && prediction.is_correct !== null && (
+                {prediction.is_correct !== null && (
                   <span className={prediction.is_correct ? ' text-green-400' : ' text-red-400'}>
                     {' '}
-                    ({prediction.is_correct ? 'Correct! 🎉' : 'Incorrect'}) +
+                    ({prediction.is_correct ? 'Correct' : 'Incorrect'}) +
                     {prediction.points_earned} pts
                   </span>
                 )}
@@ -221,7 +219,18 @@ export default function MatchPage() {
 
           <div className="text-slate-400 text-sm">
             Status: <span className="capitalize font-semibold">{match.status}</span>
+            {match.status === 'completed' && match.result && (
+              <>
+                {' '}
+                • Winner: <span className="font-semibold text-green-400">{match.result}</span>
+              </>
+            )}
           </div>
+        </div>
+
+        <div className="mt-12">
+          <h2 className="text-xl font-semibold mb-4">Live Polls</h2>
+          <PollDisplay matchId={matchId} />
         </div>
       </div>
     </div>

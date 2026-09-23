@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { updateMatchStatuses } from '@/lib/matchUtils'
 
 type Match = {
   id: string
@@ -31,9 +32,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (user) {
-      fetchMatches()
+      checkAndUpdateMatches()
     }
   }, [user])
+
+  const checkAndUpdateMatches = async () => {
+    await updateMatchStatuses()
+    await fetchMatches()
+  }
 
   const fetchMatches = async () => {
     try {
@@ -107,8 +113,16 @@ export default function Dashboard() {
                       {new Date(match.scheduled_at).toLocaleString()}
                     </p>
                   </div>
-                  <span className="bg-purple-600/20 text-purple-300 px-3 py-1 rounded text-sm capitalize">
-                    {match.status}
+                  <span
+                    className={`px-3 py-1 rounded text-sm capitalize ${
+                      match.status === 'live'
+                        ? 'bg-red-600/20 text-red-300 animate-pulse'
+                        : match.status === 'completed'
+                        ? 'bg-green-600/20 text-green-300'
+                        : 'bg-purple-600/20 text-purple-300'
+                    }`}
+                  >
+                    {match.status === 'live' ? '🔴 LIVE' : match.status}
                   </span>
                 </div>
               </div>
